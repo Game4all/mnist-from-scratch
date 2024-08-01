@@ -1,0 +1,10 @@
+# zig cache directories
+.zig-cache
+zig-out
+
+# dataset files
+*.idx3-ubyte
+*.idx1-ubyte
+
+# model file
+src/model.bin

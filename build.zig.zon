@@ -1,0 +1,15 @@
+.{
+    .name = "mnist-from-scratch",
+    .version = "0.1.0",
+    .dependencies = .{
+        .brainz = .{
+            .url = "git+https://github.com/Game4all/brainz#f7c1eace791b1e7f89394cafa32687b39dfd984e",
+            .hash = "1220cd95f5542686c1f6acbad1e57352a2dec037d8e315cbd27baad415b3c37d4398",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
