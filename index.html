@@ -30,7 +30,6 @@
         function cropImage() {
             croppedCtx.clearRect(0, 0, croppedCanvas.width, croppedCanvas.height);
             croppedCtx.drawImage(srcCanvas, 0, 0, srcCanvas.width, srcCanvas.height, 0, 0, croppedCanvas.width, croppedCanvas.height);
-            croppedCtx.commit();
 
             // convert data to grayscale
             const imgData = croppedCtx.getImageData(0, 0, croppedCanvas.width, croppedCanvas.height, {});
@@ -100,8 +99,9 @@
         </div>
     </div>
 
-    <div class="fixed bottom-5 left-5">
+    <div class="fixed bottom-5 left-5 space-y-1">
         <p>Powered by Zig ⚡ + WebAssembly 🟪</p>
+        <a class="underline" href="https://github.com/Game4all/mnist-from-scratch">source code</a>
     </div>
 </body>
 
