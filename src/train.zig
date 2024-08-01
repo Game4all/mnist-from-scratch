@@ -8,7 +8,7 @@ const MNISTClassifier = @import("model.zig").MNISTClassifier;
 const Tensor = brainz.tensor.Tensor;
 
 const BASE_LEARNING_RATE: f32 = 0.05;
-const NUM_EPOCHS: usize = 30;
+const NUM_EPOCHS: usize = 5;
 
 pub fn main() !void {
     const out = std.io.getStdOut();
