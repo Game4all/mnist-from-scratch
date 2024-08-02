@@ -7,76 +7,7 @@
     <title>MNIST from scratch</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.js"></script>
-    <script type="module">
-        var canvas = new fabric.Canvas('user-canvas');
-        canvas.isDrawingMode = true;
-        canvas.freeDrawingBrush.width = 28;
-        canvas.freeDrawingBrush.color = "#000000";
-
-        const srcCanvas = document.getElementById("user-canvas");
-        const srcCanvasCtx = srcCanvas.getContext("2d");
-
-        const croppedCanvas = new OffscreenCanvas(28, 28);
-        const croppedCtx = croppedCanvas.getContext('2d');
-
-        const resultCanvas = document.getElementById("results");
-        const resultCanvasCtx = resultCanvas.getContext("2d");
-
-        const model = await WebAssembly.instantiateStreaming(fetch("webmnist.wasm"));
-
-        console.log("Model initialization returned : " + (model.instance.exports.init() != 0 ? "an error" : "OK"))
-
-        /// Crops the canvas in an offscreen canvas and stores the data for in the input tensor memory.
-        function cropImage() {
-            croppedCtx.clearRect(0, 0, croppedCanvas.width, croppedCanvas.height);
-            croppedCtx.drawImage(srcCanvas, 0, 0, srcCanvas.width, srcCanvas.height, 0, 0, croppedCanvas.width, croppedCanvas.height);
-
-            // convert data to grayscale
-            const imgData = croppedCtx.getImageData(0, 0, croppedCanvas.width, croppedCanvas.height, {});
-            var grayScaleImgData = new Float32Array(model.instance.exports.memory.buffer, model.instance.exports.getInputDataPointer(), imgData.width * imgData.height)
-            for (var i = 0; i < imgData.data.length; i += 4) {
-                var a = imgData.data[i + 3];
-                grayScaleImgData[i / 4] = a / 256.0;
-            }
-        }
-
-        // clear button
-        document.getElementById("clear-btn").addEventListener("click", (_, __) => {
-            canvas.clear();
-            document.getElementById("pred-class").textContent = "Prediction : ???";
-
-            resultCanvasCtx.clearRect(0, 0, resultCanvas.width, resultCanvas.height);
-        });
-
-        canvas.on("mouse:up", _ => {
-            canvas.renderAll();
-            cropImage();
-
-            const result = model.instance.exports.runInference();
-            const logits = new Float32Array(model.instance.exports.memory.buffer, model.instance.exports.getOutputLogitsPointer(), 10);
-            document.getElementById("pred-class").textContent = `Prediction : ${result} (${(logits[result] * 100.0).toFixed(2)}%)`
-
-            resultCanvasCtx.clearRect(0, 0, resultCanvas.width, resultCanvas.height);
-
-            const barWidth = resultCanvas.width / 10 - 10;
-            for (let i = 0; i < logits.length; i++) {
-                resultCanvasCtx.fillStyle = 'cyan';
-                resultCanvasCtx.fillRect(
-                    (resultCanvas.width / 10) * i + 5,
-                    resultCanvas.height - 20,
-                    barWidth,
-                    -logits[i] * 50
-                );
-
-                const text = i.toString();
-                const textWidth = resultCanvasCtx.measureText(text).width;
-                const textX = (resultCanvas.width / 10) * i + 5 + (barWidth / 2) - (textWidth / 2);
-
-                resultCanvasCtx.fillStyle = 'black';
-                resultCanvasCtx.fillText(text, textX, 10);
-            }
-
-        });
+    <script src="index.js" type="module"></script>
     </script>
 </head>
 
