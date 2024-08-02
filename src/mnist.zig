@@ -1,3 +1,6 @@
+// Copyright 2024, Lucas Arriesse (Game4all)
+// Please see the license file at root of repository for more information.
+
 const std = @import("std");
 const brainz = @import("brainz");
 

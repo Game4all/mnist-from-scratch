@@ -1,3 +1,6 @@
+// Copyright 2024, Lucas Arriesse (Game4all)
+// Please see the license file at root of repository for more information.
+
 const brainz = @import("brainz");
 const std = @import("std");
 
@@ -53,7 +56,7 @@ pub fn MNISTClassifier(comptime num_batches: usize) type {
             return self.layer_4.outputShape();
         }
 
-        pub fn step(self: *@This(), device: Device, ins: *const Tensor(f32), lr: f32) void {
+        pub fn step(self: *@This(), device: Device, ins: *const Tensor(f32), lr: f32) !void {
             const layer4_inputs = self.layer_3.activation_outputs.transpose();
             const layer3_inputs = self.layer_2.activation_outputs.transpose();
             const layer2_inputs = self.layer_1.activation_outputs.transpose();

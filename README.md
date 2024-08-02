@@ -17,3 +17,11 @@ This requires Zig **0.13.0** to work.
 2. Download and extract the MNIST dataset into the repository root.
 2. Run `zig build` and wait for model training to finish (should take approximately 5-10min)
 3. Deployable WASM + HTML file is at `zig-out/web/public`
+
+
+## License and acknowledgements
+
+This project is licensed under **MIT licence**.
+
+Uses the MNIST dataset (https://yann.lecun.com/exdb/mnist/)
+

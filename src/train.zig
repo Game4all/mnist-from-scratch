@@ -1,3 +1,6 @@
+// Copyright 2024, Lucas Arriesse (Game4all)
+// Please see the license file at root of repository for more information.
+
 const std = @import("std");
 const brainz = @import("brainz");
 const mnist = @import("mnist.zig");
@@ -62,7 +65,7 @@ pub fn main() !void {
 
             try writer.print("\r=> epoch: {} | loss: {d:.3} | {}/{} | lr={e:.3}    ", .{ e, total_loss, batch_iterator.pos / MNISTDataset.IMAGE_SIZE, num_training_images, lr });
             net.backwards(device, &loss);
-            net.step(device, inputs, BASE_LEARNING_RATE);
+            try net.step(device, inputs, BASE_LEARNING_RATE);
         }
 
         const accuracy = evaluate_model_accuracy(&evaluation_dataset, device, &net);
