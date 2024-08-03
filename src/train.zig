@@ -48,13 +48,13 @@ pub fn main() !void {
     const tb = try std.time.Instant.now();
 
     for (0..NUM_EPOCHS) |e| {
+        // cyclical cosine learning rate scheduling
+        const lr: f32 = 0.001 + BASE_LEARNING_RATE * @abs(@cos(@as(f32, @floatFromInt(e)) / std.math.pi));
+
         var total_loss: f32 = 0.0;
-
-        const lr: f32 = BASE_LEARNING_RATE;
-
         var batch_iterator = training_dataset.iterator();
 
-        while (batch_iterator.next_train(device)) |data| {
+        while (try batch_iterator.next_train(device)) |data| {
             const inputs, const labels = data;
             const result = net.forward(device, inputs);
 
@@ -68,7 +68,7 @@ pub fn main() !void {
             try net.step(device, inputs, BASE_LEARNING_RATE);
         }
 
-        const accuracy = evaluate_model_accuracy(&evaluation_dataset, device, &net);
+        const accuracy = try evaluate_model_accuracy(&evaluation_dataset, device, &net);
         try writer.print("\r epoch: {} | loss: {d:.3} | lr={e:.3} | Validation Acc: {d:.2}% \n                                        ", .{ e, total_loss, lr, accuracy * 100.0 });
     }
 
@@ -86,7 +86,7 @@ fn evaluate_model_accuracy(
     evaluation_dataset: *MNISTDataset,
     device: anytype,
     net: anytype,
-) f32 {
+) !f32 {
     const total_batches: usize = (evaluation_dataset.label_data.len / evaluation_dataset.batch_size) * evaluation_dataset.batch_size;
     var num_correct: usize = 0;
 
@@ -98,20 +98,20 @@ fn evaluate_model_accuracy(
     const fba_alloc = fba.allocator();
 
     // tensors labels from output
-    var out_labels = Tensor(usize).init(.{ net.outputShape().@"0", 0, 1 }, fba_alloc) catch unreachable;
-    var expected_labels = Tensor(usize).init(.{ net.outputShape().@"0", 0, 1 }, fba_alloc) catch unreachable;
+    var out_labels = try Tensor(usize).init(.{ net.outputShape().@"0", 0, 1 }, fba_alloc);
+    var expected_labels = try Tensor(usize).init(.{ net.outputShape().@"0", 0, 1 }, fba_alloc);
 
-    while (iter.next_eval(device)) |data| {
+    while (try iter.next_eval(device)) |data| {
         const inputs, const labels = data;
 
         const result = net.forward(device, inputs);
         brainz.ops.argmax(f32, result, 1, &out_labels); //argmax the guessed labels
 
         brainz.ops.cast(u8, usize, device, &labels, &expected_labels);
-        device.barrier() catch unreachable;
+        try device.barrier();
 
         brainz.ops.elementWiseEq(usize, device, &out_labels, &expected_labels, &expected_labels);
-        device.barrier() catch unreachable;
+        try device.barrier();
 
         num_correct += brainz.ops.sum(usize, &expected_labels);
     }

@@ -95,16 +95,16 @@ pub const MNISTDataset = struct {
         pos: usize,
         ptr: *Self,
 
-        pub fn next_train(self: *@This(), dev: Device) ?struct { *const Tensor(f32), *const Tensor(f32) } {
+        pub fn next_train(self: *@This(), dev: Device) !?struct { *const Tensor(f32), *const Tensor(f32) } {
             if (self.pos < self.ptr.image_data.len) {
                 // preprocess and load the inputs
-                const inputU = Tensor(u8).initFromSlice(self.ptr.f_inputs.shape, self.ptr.image_data[self.pos..(self.pos + IMAGE_SIZE * self.ptr.batch_size)]) catch unreachable;
+                const inputU = try Tensor(u8).initFromSlice(self.ptr.f_inputs.shape, self.ptr.image_data[self.pos..(self.pos + IMAGE_SIZE * self.ptr.batch_size)]);
 
                 brainz.ops.cast(u8, f32, dev, &inputU, &self.ptr.f_inputs);
-                dev.barrier() catch unreachable;
+                try dev.barrier();
 
                 brainz.ops.mulScalar(f32, dev, &self.ptr.f_inputs, 1.0 / 256.0, &self.ptr.f_inputs);
-                dev.barrier() catch unreachable;
+                try dev.barrier();
 
                 // one hot encoding
                 encode_one_hot(f32, self.ptr.label_data[(self.pos / IMAGE_SIZE)..((self.pos / IMAGE_SIZE) + self.ptr.batch_size)], &self.ptr.label_encoded_tensor);
@@ -117,17 +117,17 @@ pub const MNISTDataset = struct {
             return null;
         }
 
-        pub fn next_eval(self: *@This(), dev: Device) ?struct { *const Tensor(f32), Tensor(u8) } {
+        pub fn next_eval(self: *@This(), dev: Device) !?struct { *const Tensor(f32), Tensor(u8) } {
             if (self.pos < self.ptr.image_data.len) {
                 // preprocess and load the inputs
-                const inputU = Tensor(u8).initFromSlice(self.ptr.f_inputs.shape, self.ptr.image_data[self.pos..(self.pos + IMAGE_SIZE * self.ptr.batch_size)]) catch unreachable;
+                const inputU = try Tensor(u8).initFromSlice(self.ptr.f_inputs.shape, self.ptr.image_data[self.pos..(self.pos + IMAGE_SIZE * self.ptr.batch_size)]);
                 brainz.ops.cast(u8, f32, dev, &inputU, &self.ptr.f_inputs);
-                dev.barrier() catch unreachable;
+                try dev.barrier();
 
                 brainz.ops.mulScalar(f32, dev, &self.ptr.f_inputs, 1.0 / 256.0, &self.ptr.f_inputs);
-                dev.barrier() catch unreachable;
+                try dev.barrier();
 
-                const labels = Tensor(u8).initFromSlice(.{ self.ptr.batch_size, 0, 1 }, self.ptr.label_data[(self.pos / IMAGE_SIZE)..((self.pos / IMAGE_SIZE) + self.ptr.batch_size)]) catch unreachable;
+                const labels = try Tensor(u8).initFromSlice(.{ self.ptr.batch_size, 0, 1 }, self.ptr.label_data[(self.pos / IMAGE_SIZE)..((self.pos / IMAGE_SIZE) + self.ptr.batch_size)]);
 
                 self.pos += IMAGE_SIZE * self.ptr.batch_size;
 
