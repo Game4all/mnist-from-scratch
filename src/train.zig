@@ -10,7 +10,7 @@ const MNISTDataset = mnist.MNISTDataset;
 const MNISTClassifier = @import("model.zig").MNISTClassifier;
 const Tensor = brainz.tensor.Tensor;
 
-const BASE_LEARNING_RATE: f32 = 0.05;
+const BASE_LEARNING_RATE: f32 = 5e-2;
 const NUM_EPOCHS: usize = 15;
 
 pub fn main() !void {
@@ -43,43 +43,49 @@ pub fn main() !void {
 
     const num_training_images = training_dataset.image_data.len / MNISTDataset.IMAGE_SIZE;
 
+    var softmaxed_logits = try Tensor(f32).init(net.outputShape(), arena_alloc);
     var loss = try Tensor(f32).init(net.outputShape(), arena_alloc);
 
     const tb = try std.time.Instant.now();
 
     for (0..NUM_EPOCHS) |e| {
         // cyclical cosine learning rate scheduling
-        const lr: f32 = 0.001 + BASE_LEARNING_RATE * @abs(@cos(@as(f32, @floatFromInt(e)) / std.math.pi));
+        const lr: f32 = 1e-5 + BASE_LEARNING_RATE * @abs(@cos(@as(f32, @floatFromInt(e)) / std.math.pi));
 
         var total_loss: f32 = 0.0;
         var batch_iterator = training_dataset.iterator();
 
         while (try batch_iterator.next_train(device)) |data| {
             const inputs, const labels = data;
-            const result = net.forward(device, inputs);
+            const result = try net.forward(device, inputs);
 
-            brainz.ops.categoricalCrossEntropyLossBackprop(f32, device, result, labels, &loss);
-            total_loss += brainz.ops.categoricalCrossEntropyLoss(f32, device, result, labels);
+            // apply softmax to the output logits
+            try brainz.ops.softmax(f32, device, result, 1, &softmaxed_logits);
+            try device.barrier();
+
+            try brainz.ops.categoricalCrossEntropyLossBackprop(f32, device, &softmaxed_logits, labels, &loss);
+            total_loss += brainz.ops.categoricalCrossEntropyLoss(f32, device, &softmaxed_logits, labels);
 
             try device.barrier();
 
             try writer.print("\r=> epoch: {} | loss: {d:.3} | {}/{} | lr={e:.3}    ", .{ e, total_loss, batch_iterator.pos / MNISTDataset.IMAGE_SIZE, num_training_images, lr });
-            net.backwards(device, &loss);
+            try net.backwards(device, &loss);
             try net.step(device, inputs, BASE_LEARNING_RATE);
         }
 
         const accuracy = try evaluate_model_accuracy(&evaluation_dataset, device, &net);
-        try writer.print("\r epoch: {} | loss: {d:.3} | lr={e:.3} | Validation Acc: {d:.2}% \n                                        ", .{ e, total_loss, lr, accuracy * 100.0 });
+        try writer.print("\r epoch: {} | loss: {d:.3} | lr={e:.3} | Validation Acc: {d:.2}% \n", .{ e, total_loss, lr, accuracy * 100.0 });
+
+        if (e % 10 == 0) {
+            try net.saveModelToFile("src/model.bin");
+            try writer.print("Saved model checkpoint to disk. \n", .{});
+        }
     }
 
     const after = try std.time.Instant.now();
     const diff = after.since(tb) / std.time.ns_per_s;
 
     try writer.print("\n Training took {}s / {}min", .{ diff, diff / std.time.s_per_min });
-
-    try net.saveModelToFile("src/model.bin");
-
-    try writer.print("\n Saved model to disk.", .{});
 }
 
 fn evaluate_model_accuracy(
@@ -104,13 +110,13 @@ fn evaluate_model_accuracy(
     while (try iter.next_eval(device)) |data| {
         const inputs, const labels = data;
 
-        const result = net.forward(device, inputs);
+        const result = try net.forward(device, inputs);
         brainz.ops.argmax(f32, result, 1, &out_labels); //argmax the guessed labels
 
-        brainz.ops.cast(u8, usize, device, &labels, &expected_labels);
+        try brainz.ops.cast(u8, usize, device, &labels, &expected_labels);
         try device.barrier();
 
-        brainz.ops.elementWiseEq(usize, device, &out_labels, &expected_labels, &expected_labels);
+        try brainz.ops.elementWiseEq(usize, device, &out_labels, &expected_labels, &expected_labels);
         try device.barrier();
 
         num_correct += brainz.ops.sum(usize, &expected_labels);

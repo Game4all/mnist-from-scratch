@@ -100,10 +100,10 @@ pub const MNISTDataset = struct {
                 // preprocess and load the inputs
                 const inputU = try Tensor(u8).initFromSlice(self.ptr.f_inputs.shape, self.ptr.image_data[self.pos..(self.pos + IMAGE_SIZE * self.ptr.batch_size)]);
 
-                brainz.ops.cast(u8, f32, dev, &inputU, &self.ptr.f_inputs);
+                try brainz.ops.cast(u8, f32, dev, &inputU, &self.ptr.f_inputs);
                 try dev.barrier();
 
-                brainz.ops.mulScalar(f32, dev, &self.ptr.f_inputs, 1.0 / 256.0, &self.ptr.f_inputs);
+                try brainz.ops.mulScalar(f32, dev, &self.ptr.f_inputs, 1.0 / 256.0, &self.ptr.f_inputs);
                 try dev.barrier();
 
                 // one hot encoding
@@ -121,10 +121,10 @@ pub const MNISTDataset = struct {
             if (self.pos < self.ptr.image_data.len) {
                 // preprocess and load the inputs
                 const inputU = try Tensor(u8).initFromSlice(self.ptr.f_inputs.shape, self.ptr.image_data[self.pos..(self.pos + IMAGE_SIZE * self.ptr.batch_size)]);
-                brainz.ops.cast(u8, f32, dev, &inputU, &self.ptr.f_inputs);
+                try brainz.ops.cast(u8, f32, dev, &inputU, &self.ptr.f_inputs);
                 try dev.barrier();
 
-                brainz.ops.mulScalar(f32, dev, &self.ptr.f_inputs, 1.0 / 256.0, &self.ptr.f_inputs);
+                try brainz.ops.mulScalar(f32, dev, &self.ptr.f_inputs, 1.0 / 256.0, &self.ptr.f_inputs);
                 try dev.barrier();
 
                 const labels = try Tensor(u8).initFromSlice(.{ self.ptr.batch_size, 0, 1 }, self.ptr.label_data[(self.pos / IMAGE_SIZE)..((self.pos / IMAGE_SIZE) + self.ptr.batch_size)]);
