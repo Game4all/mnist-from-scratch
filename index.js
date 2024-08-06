@@ -62,7 +62,7 @@ function centerImage(hitbox) {
 function centerAndCropImage() {
     const hitbox = computeHitbox(srcCanvasCtx, srcCanvas.width, srcCanvas.height);
     centerImage(hitbox);
-    
+
     croppedCanvasCtx.clearRect(0, 0, croppedCanvas.width, croppedCanvas.height);
     croppedCanvasCtx.drawImage(centeredCanvas, 0, 0, centeredCanvas.width, centeredCanvas.height, 0, 0, croppedCanvas.width, croppedCanvas.height);
 
@@ -108,6 +108,19 @@ function drawLogitScores(result, logits) {
     document.getElementById("pred-class").textContent = `Prediction : ${result} (${(logits[result] * 100.0).toFixed(2)}%)`;
 }
 
+/// Runs model inference and prints the logit distribution.
+function guess() {
+    const binaryData = centerAndCropImage();
+
+    const inputTensor = new Float32Array(model.instance.exports.memory.buffer, model.instance.exports.getInputDataPointer(), binaryData.length);
+    inputTensor.set(binaryData);
+
+    const result = model.instance.exports.runInference();
+    const logits = new Float32Array(model.instance.exports.memory.buffer, model.instance.exports.getOutputLogitsPointer(), 10);
+
+    drawLogitScores(result, logits);
+}
+
 
 const model = await WebAssembly.instantiateStreaming(fetch("webmnist.wasm"));
 console.log("Model initialization returned : " + (model.instance.exports.init() != 0 ? "an error" : "OK"));
@@ -121,15 +134,26 @@ document.getElementById("clear-btn").addEventListener("click", (_, __) => {
     drawLogitNumbers();
 });
 
+// correct button
+document.getElementById("correct-btn").addEventListener("click", () => {
+    while (true) {
+        const wInput = window.prompt("Specify the correct digit label", "0");
+
+        if (wInput === null) return;
+
+        const targetValue = parseInt(wInput);
+
+        if (isNaN(targetValue) || targetValue < 0 || targetValue >= 10) {
+            alert("An invalid digit label was specified!");
+        } else {
+            model.instance.exports.train(targetValue);
+            guess();
+            return;
+        }
+    }
+});
+
 canvas.on("mouse:up", _ => {
     canvas.renderAll();
-    const binaryData = centerAndCropImage();
-
-    const inputTensor = new Float32Array(model.instance.exports.memory.buffer, model.instance.exports.getInputDataPointer(), binaryData.length);
-    inputTensor.set(binaryData);
-
-    const result = model.instance.exports.runInference();
-    const logits = new Float32Array(model.instance.exports.memory.buffer, model.instance.exports.getOutputLogitsPointer(), 10);
-
-    drawLogitScores(result, logits);
+    guess();
 });
