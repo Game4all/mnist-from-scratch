@@ -7,7 +7,7 @@ const std = @import("std");
 const Dense = brainz.Dense;
 const Device = brainz.Device;
 const Allocator = std.mem.Allocator;
-const Tensor = brainz.tensor.Tensor;
+const Tensor = brainz.Tensor;
 
 /// A MLP-based neural network for handwritten digit classification.
 pub fn MNISTClassifier(comptime num_batches: usize) type {

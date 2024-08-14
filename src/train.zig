@@ -4,11 +4,10 @@
 const std = @import("std");
 const brainz = @import("brainz");
 const mnist = @import("mnist.zig");
-const CPUDevice = brainz.default_device;
 
 const MNISTDataset = mnist.MNISTDataset;
 const MNISTClassifier = @import("model.zig").MNISTClassifier;
-const Tensor = brainz.tensor.Tensor;
+const Tensor = brainz.Tensor;
 
 const BASE_LEARNING_RATE: f32 = 5e-2;
 const NUM_EPOCHS: usize = 15;
@@ -20,7 +19,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var cpudev: CPUDevice = .{};
+    var cpudev: brainz.preferred_device_type = .{};
     try cpudev.init(gpa.allocator(), null);
     defer cpudev.deinit();
 
