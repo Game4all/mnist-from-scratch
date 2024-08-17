@@ -63,7 +63,8 @@ pub export fn getOutputLogitsPointer() usize {
 /// The return value indicates the number class with the highest score.
 pub export fn runInference() u32 {
     const result = model.forward(DummyDevice, &input_tensor) catch return 0;
-    brainz.ops.argmax(f32, result, 1, &argmax_result);
+    brainz.ops.softmax(f32, DummyDevice, result, 1, &softmaxed_values) catch return 0;
+    brainz.ops.argmax(f32, &softmaxed_values, 1, &argmax_result);
     return @truncate(argmax_result.get(.{ 0, 0, 0 }));
 }
 
