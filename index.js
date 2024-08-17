@@ -81,6 +81,7 @@ function centerAndCropImage() {
 function drawLogitNumbers() {
     resultCanvasCtx.clearRect(0, 0, resultCanvas.width, resultCanvas.height);
     const barWidth = resultCanvas.width / 10 - 10;
+    resultCanvasCtx.font = "12px arial";
     for (let i = 0; i < 10; i++) {
         const text = i.toString();
         const textWidth = resultCanvasCtx.measureText(text).width;
@@ -96,12 +97,12 @@ function drawLogitScores(result, logits) {
     drawLogitNumbers();
     const barWidth = resultCanvas.width / 10 - 10;
     for (let i = 0; i < logits.length; i++) {
-        resultCanvasCtx.fillStyle = 'cyan';
+        resultCanvasCtx.fillStyle = 'black';
         resultCanvasCtx.fillRect(
             (resultCanvas.width / 10) * i + 5,
             resultCanvas.height - 20,
             barWidth,
-            -logits[i] * 50
+            -logits[i] * 60
         );
     }
 
@@ -117,6 +118,7 @@ function guess() {
 
     const result = model.instance.exports.runInference();
     const logits = new Float32Array(model.instance.exports.memory.buffer, model.instance.exports.getOutputLogitsPointer(), 10);
+    console.log(logits)
 
     drawLogitScores(result, logits);
 }
