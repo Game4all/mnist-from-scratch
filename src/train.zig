@@ -84,6 +84,7 @@ pub fn main() !void {
     const after = try std.time.Instant.now();
     const diff = after.since(tb) / std.time.ns_per_s;
 
+    try net.saveModelToFile("src/model.bin");
     try writer.print("\n Training took {}s / {}min", .{ diff, diff / std.time.s_per_min });
 }
 
