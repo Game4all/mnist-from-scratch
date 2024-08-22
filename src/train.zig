@@ -98,14 +98,15 @@ fn evaluate_model_accuracy(
 
     var iter = evaluation_dataset.iterator();
 
-    // local allocator
-    var buf: [4096]u8 = undefined;
-    var fba = std.heap.FixedBufferAllocator.init(&buf);
-    const fba_alloc = fba.allocator();
+    const stack_alloc = blk: {
+        var buf: [4096]u8 = undefined;
+        var fba = std.heap.FixedBufferAllocator.init(&buf);
+        break :blk fba.allocator();
+    };
 
     // tensors labels from output
-    var out_labels = try Tensor(usize).init(.{ net.outputShape().@"0", 0, 1 }, fba_alloc);
-    var expected_labels = try Tensor(usize).init(.{ net.outputShape().@"0", 0, 1 }, fba_alloc);
+    var out_labels = try Tensor(usize).init(.{ net.outputShape().@"0", 0, 1 }, stack_alloc);
+    var expected_labels = try Tensor(usize).init(.{ net.outputShape().@"0", 0, 1 }, stack_alloc);
 
     while (try iter.next_eval(device)) |data| {
         const inputs, const labels = data;

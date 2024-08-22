@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
     });
 
     // code for model training
-    const train = b.addExecutable(.{
+    const train_model = b.addExecutable(.{
         .name = "train",
         .root_source_file = b.path("src/train.zig"),
         .target = target,
@@ -28,10 +28,10 @@ pub fn build(b: *std.Build) void {
     webmnist.entry = .disabled;
     webmnist.export_memory = true;
 
-    train.root_module.addImport("brainz", brainz.module("brainz"));
+    train_model.root_module.addImport("brainz", brainz.module("brainz"));
     webmnist.root_module.addImport("brainz", brainz.module("brainz"));
 
-    b.installArtifact(train);
+    b.installArtifact(train_model);
 
     // copy html + wasm to the web directory
     b.installDirectory(.{ .source_dir = b.path("public"), .install_dir = .{ .custom = "web" }, .install_subdir = "public" });
@@ -42,11 +42,13 @@ pub fn build(b: *std.Build) void {
         .dest_sub_path = "public/webmnist.wasm",
     }).step);
 
-    const run_train_step = b.addRunArtifact(train);
-
+    // step to train model locally
     const run_train_cmd = b.step("train", "Runs model training");
-    run_train_cmd.dependOn(&run_train_step.step);
+    run_train_cmd.dependOn(&b.addRunArtifact(train_model).step);
 
-    // run model training before compiling the WASM executable.
-    webmnist.step.dependOn(&run_train_step.step);
+    // run model training if model checkpoints aren't found.
+    std.fs.cwd().access("src/model.bin", .{}) catch |err| {
+        std.log.warn("Failed to open base model checkpoints ({}). Running model training.", .{err});
+        webmnist.step.dependOn(run_train_cmd);
+    };
 }
