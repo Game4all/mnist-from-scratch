@@ -95,7 +95,7 @@ pub const MNISTDataset = struct {
         pos: usize,
         ptr: *Self,
 
-        pub fn next_train(self: *@This(), dev: Device) !?struct { *const Tensor(f32), *const Tensor(f32) } {
+        pub fn nextBatchTraining(self: *@This(), dev: Device) !?struct { *const Tensor(f32), *const Tensor(f32) } {
             if (self.pos < self.ptr.image_data.len) {
                 // preprocess and load the inputs
                 const inputU = try Tensor(u8).initFromSlice(self.ptr.f_inputs.shape, self.ptr.image_data[self.pos..(self.pos + IMAGE_SIZE * self.ptr.batch_size)]);
@@ -107,7 +107,7 @@ pub const MNISTDataset = struct {
                 try dev.barrier();
 
                 // one hot encoding
-                encode_one_hot(f32, self.ptr.label_data[(self.pos / IMAGE_SIZE)..((self.pos / IMAGE_SIZE) + self.ptr.batch_size)], &self.ptr.label_encoded_tensor);
+                encodeOneHot(f32, self.ptr.label_data[(self.pos / IMAGE_SIZE)..((self.pos / IMAGE_SIZE) + self.ptr.batch_size)], &self.ptr.label_encoded_tensor);
 
                 self.pos += IMAGE_SIZE * self.ptr.batch_size;
 
@@ -117,7 +117,7 @@ pub const MNISTDataset = struct {
             return null;
         }
 
-        pub fn next_eval(self: *@This(), dev: Device) !?struct { *const Tensor(f32), Tensor(u8) } {
+        pub fn nextBatchEval(self: *@This(), dev: Device) !?struct { *const Tensor(f32), Tensor(u8) } {
             if (self.pos < self.ptr.image_data.len) {
                 // preprocess and load the inputs
                 const inputU = try Tensor(u8).initFromSlice(self.ptr.f_inputs.shape, self.ptr.image_data[self.pos..(self.pos + IMAGE_SIZE * self.ptr.batch_size)]);
@@ -139,7 +139,7 @@ pub const MNISTDataset = struct {
     };
 };
 
-fn encode_one_hot(comptime ty: type, indices: []const u8, result: *Tensor(ty)) void {
+fn encodeOneHot(comptime ty: type, indices: []const u8, result: *Tensor(ty)) void {
     std.debug.assert(indices.len == result.shape.@"0");
     result.fill(0);
 
