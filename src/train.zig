@@ -30,7 +30,7 @@ pub fn main() !void {
 
     const arena_alloc = arena.allocator();
 
-    var net: MNISTClassifier(128) = undefined;
+    var net: MNISTClassifier(256) = undefined;
     try net.init(arena_alloc);
     net.loadFromFile("src/model.bin") catch |err| {
         try writer.print("Failed to load a model checkpoint: {} \n", .{err});
