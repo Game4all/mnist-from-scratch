@@ -54,7 +54,7 @@ pub fn main() !void {
         var total_loss: f32 = 0.0;
         var batch_iterator = training_dataset.iterator();
 
-        while (try batch_iterator.next_train(device)) |data| {
+        while (try batch_iterator.nextBatchTraining(device)) |data| {
             const inputs, const labels = data;
             const result = try net.forward(device, inputs);
 
@@ -72,7 +72,7 @@ pub fn main() !void {
             try net.step(device, inputs, BASE_LEARNING_RATE);
         }
 
-        const accuracy = try evaluate_model_accuracy(&evaluation_dataset, device, &net);
+        const accuracy = try evaluateModelAccuracy(&evaluation_dataset, device, &net);
         try writer.print("\r epoch: {} | loss: {d:.3} | lr={e:.3} | Validation Acc: {d:.2}% \n", .{ e, total_loss, lr, accuracy * 100.0 });
 
         if (e % 10 == 0) {
@@ -88,7 +88,7 @@ pub fn main() !void {
     try writer.print("\n Training took {}s / {}min", .{ diff, diff / std.time.s_per_min });
 }
 
-fn evaluate_model_accuracy(
+fn evaluateModelAccuracy(
     evaluation_dataset: *MNISTDataset,
     device: anytype,
     net: anytype,
@@ -108,7 +108,7 @@ fn evaluate_model_accuracy(
     var out_labels = try Tensor(usize).init(.{ net.outputShape().@"0", 0, 1 }, stack_alloc);
     var expected_labels = try Tensor(usize).init(.{ net.outputShape().@"0", 0, 1 }, stack_alloc);
 
-    while (try iter.next_eval(device)) |data| {
+    while (try iter.nextBatchEval(device)) |data| {
         const inputs, const labels = data;
 
         const result = try net.forward(device, inputs);
