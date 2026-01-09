@@ -1,11 +1,12 @@
 .{
-    .name = "mnist-from-scratch",
-    .minimum_zig_version = "0.13.0",
-    .version = "0.1.0",
+    .fingerprint = 0x256f54f4e13ac3c,
+    .name = .mnist_from_scratch,
+    .minimum_zig_version = "0.15.2",
+    .version = "0.2.0",
     .dependencies = .{
         .brainz = .{
-            .url = "git+https://github.com/Game4all/brainz#ae0ca8ae92423bb2fec6bfc63c903f6d371a0846",
-            .hash = "12202e901cc1fbae68593f808d1553560730858dfe709d261992207e74db8d32dc51",
+            .url = "git+https://github.com/Game4all/brainz#7afc0dd6053f678245deb7c22fadc49636cc78b2",
+            .hash = "brainz-0.0.0-_0AKevl-AQCESJ33R-WTTQNAdB9HjhAt_KFe6I0lCHp_",
         },
     },
     .paths = .{
