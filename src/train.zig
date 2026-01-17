@@ -4,124 +4,155 @@
 const std = @import("std");
 const brainz = @import("brainz");
 const mnist = @import("mnist.zig");
+const model = @import("model.zig");
 
 const MNISTDataset = mnist.MNISTDataset;
-const MNISTClassifier = @import("model.zig").MNISTClassifier;
-const Tensor = brainz.Tensor;
+const MNISTClassifier = model.MNISTClassifier;
 
-const BASE_LEARNING_RATE: f32 = 5e-2;
-const NUM_EPOCHS: usize = 15;
+const Tensor = brainz.Tensor;
+const TensorArena = brainz.TensorArena;
+const LinearPlan = brainz.LinearPlan;
+const ExecutionPlan = brainz.ExecutionPlan;
+
+const MNISTClassifierNet = brainz.nn.Sequential(MNISTClassifier);
+
+const BATCH_SIZE: usize = 32;
+const BASE_LEARNING_RATE: f32 = 0.1;
+const NUM_EPOCHS: usize = 5;
 
 pub fn main() !void {
-    const out = std.io.getStdOut();
-    const writer = out.writer();
+    // getting handle to stdout
+    var stdoutBuffer: [1024]u8 = undefined;
+    var stdoutWriter = std.fs.File.stdout().writer(&stdoutBuffer);
+    const stdout = &stdoutWriter.interface;
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    // setup gpa for training
+    var gpa: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+    defer gpa.deinit();
 
-    var cpudev: brainz.preferred_device_type = .{};
-    try cpudev.init(gpa.allocator(), null);
-    defer cpudev.deinit();
+    const allocator = gpa.allocator();
 
-    const device = cpudev.device();
+    // setup tensor allocator + compute graph builder
+    var tensorArena: TensorArena = .init(allocator);
+    var planBuilder: LinearPlan = .init(&tensorArena, allocator);
 
-    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
-    defer arena.deinit();
+    var prng = std.Random.DefaultPrng.init(42);
+    const rnd = prng.random();
 
-    const arena_alloc = arena.allocator();
+    var network: MNISTClassifierNet = try .init(.{&planBuilder});
 
-    var net: MNISTClassifier(256) = undefined;
-    try net.init(arena_alloc);
-    net.loadFromFile("src/model.bin") catch |err| {
-        try writer.print("Failed to load a model checkpoint: {} \n", .{err});
-        try writer.print("Starting from scratch ... \n", .{});
-    };
+    // defining the compute plan
+    const inputs = try planBuilder.createInput("input", .float32, .fromSlice(&.{ BATCH_SIZE, MNISTClassifier.IN_FEATURES }), false); // the tensor with input data
+    const targets = try planBuilder.createInput("targets", .float32, .fromSlice(&.{ BATCH_SIZE, MNISTClassifier.OUT_FEATURES }), false); // the tensor with OHE'ed target labels
 
-    var training_dataset = try MNISTDataset.init(arena_alloc, "train-labels.idx1-ubyte", "train-images.idx3-ubyte", &net);
-    var evaluation_dataset = try MNISTDataset.init(arena_alloc, "t10k-labels.idx1-ubyte", "t10k-images.idx3-ubyte", &net);
+    const y_pred = try network.forward(&planBuilder, inputs);
+    const y_softmax = try brainz.ops.softmax(&planBuilder, y_pred, 1);
+    const y_indices = try brainz.ops.argMax(&planBuilder, y_softmax, 1); // argMax of y_pred
 
-    const num_training_images = training_dataset.image_data.len / MNISTDataset.IMAGE_SIZE;
+    try planBuilder.registerOutput("y_pred", y_pred);
+    try planBuilder.registerOutput("y_indices", y_indices);
 
-    var softmaxed_logits = try Tensor(f32).init(net.outputShape(), arena_alloc);
-    var loss = try Tensor(f32).init(net.outputShape(), arena_alloc);
+    const loss = try brainz.ops.crossEntropyLoss(&planBuilder, y_softmax, targets);
+    try planBuilder.registerOutput("loss", loss);
 
-    const tb = try std.time.Instant.now();
+    // finalize the plan and allocate backing memory for tensors.
+    var plan = try planBuilder.finalize(true);
+    try tensorArena.allocateStorage();
 
-    for (0..NUM_EPOCHS) |e| {
-        // cyclical cosine learning rate scheduling
-        const lr: f32 = 1e-5 + BASE_LEARNING_RATE * @abs(@cos(@as(f32, @floatFromInt(e)) / std.math.pi));
+    // randomly initialize net weights (now that we've got physical storage for our tensors)
+    network.initializeWeights(rnd);
 
-        var total_loss: f32 = 0.0;
-        var batch_iterator = training_dataset.iterator();
+    // load the train and the test datasets
+    var trainDataset: MNISTDataset = try .init(allocator, "mnist/train-labels.idx1-ubyte", "mnist/train-images.idx3-ubyte");
+    var testDataset: MNISTDataset = try .init(allocator, "mnist/t10k-labels.idx1-ubyte", "mnist/t10k-images.idx3-ubyte");
 
-        while (try batch_iterator.nextBatchTraining(device)) |data| {
-            const inputs, const labels = data;
-            const result = try net.forward(device, inputs);
+    // init the optimizer
+    var sgd: brainz.optim.SGD = .init(plan.getParams(), BASE_LEARNING_RATE);
+    const lossGrad = loss.grad.?.slice(f32).?;
 
-            // apply softmax to the output logits
-            try brainz.ops.softmax(f32, device, result, 1, &softmaxed_logits);
-            try device.barrier();
+    try stdout.print("Starting training", .{});
+    try stdout.flush();
 
-            try brainz.ops.categoricalCrossEntropyLossBackprop(f32, device, &softmaxed_logits, labels, &loss);
-            total_loss += brainz.ops.categoricalCrossEntropyLoss(f32, device, &softmaxed_logits, labels);
+    for (0..NUM_EPOCHS) |epoch| {
+        var epochLoss: f32 = 0.0;
+        var iterator = trainDataset.iterator(BATCH_SIZE);
+        var batchNum: usize = 0;
 
-            try device.barrier();
+        while (iterator.next()) {
+            const labelDataSlice = targets.slice(f32).?;
+            const inputDataSlice = inputs.slice(f32).?;
 
-            try writer.print("\r=> epoch: {} | loss: {d:.3} | {}/{} | lr={e:.3}    ", .{ e, total_loss, batch_iterator.pos / MNISTDataset.IMAGE_SIZE, num_training_images, lr });
-            try net.backwards(device, &loss);
-            try net.step(device, inputs, BASE_LEARNING_RATE);
+            // memset label data to zero then OHE encode it
+            iterator.copyLabelData(labelDataSlice);
+
+            // copy image data to the input tensor
+            iterator.copyImageData(inputDataSlice);
+
+            // perform forward pass and log loss
+            try plan.forward();
+            epochLoss += loss.scalar(f32).?;
+
+            plan.zeroGrad(); // zero stored gradients
+            lossGrad[0] = 1.0; // seed gradient for backprop
+            try plan.backward(); // perform back prop
+
+            // optimize
+            sgd.step();
+
+            if (batchNum % 100 == 0) {
+                try stdout.print("\rEpoch: {} | Loss: {} | Batch: {} / {} ", .{ epoch, epochLoss, iterator.pos, trainDataset.count_images });
+                try stdout.flush();
+            }
+            batchNum += 1;
         }
 
-        const accuracy = try evaluateModelAccuracy(&evaluation_dataset, device, &net);
-        try writer.print("\r epoch: {} | loss: {d:.3} | lr={e:.3} | Validation Acc: {d:.2}% \n", .{ e, total_loss, lr, accuracy * 100.0 });
+        // evaluate the model on the test dataset
+        const testAccuracy = try evaluateModelAccuracy(&testDataset, &plan, inputs, y_indices);
 
-        if (e % 10 == 0) {
-            try net.saveModelToFile("src/model.bin");
-            try writer.print("Saved model checkpoint to disk. \n", .{});
-        }
+        try stdout.print("\rEpoch: {} | Train loss: {} | Test Accuracy: {d:.2}%  \n\r", .{ epoch, epochLoss, testAccuracy * 100.0 });
+        try stdout.flush();
+
+        try stdout.print("Saving model to disk", .{});
+        try stdout.flush();
+
+        var writeBuffer: [1024]u8 = undefined;
+        var weightsFile = try std.fs.cwd().openFile("src/model.bin", .{ .mode = .write_only });
+        var weightWriter = weightsFile.writer(&writeBuffer);
+        const weightWriterIo = &weightWriter.interface;
+
+        try network.getInner().saveWeights(weightWriterIo);
+
+        try stdout.print("Model saved to disk.", .{});
+        try stdout.flush();
     }
-
-    const after = try std.time.Instant.now();
-    const diff = after.since(tb) / std.time.ns_per_s;
-
-    try net.saveModelToFile("src/model.bin");
-    try writer.print("\n Training took {}s / {}min", .{ diff, diff / std.time.s_per_min });
 }
 
 fn evaluateModelAccuracy(
-    evaluation_dataset: *MNISTDataset,
-    device: anytype,
-    net: anytype,
+    evaluation_dataset: *const MNISTDataset,
+    plan: *ExecutionPlan,
+    input: *const Tensor,
+    y_indices: *const Tensor,
 ) !f32 {
-    const total_batches: usize = (evaluation_dataset.label_data.len / evaluation_dataset.batch_size) * evaluation_dataset.batch_size;
-    var num_correct: usize = 0;
+    var correct_predictions: usize = 0;
+    var total_predictions: usize = 0;
+    var iterator = evaluation_dataset.iterator(BATCH_SIZE);
+    while (iterator.next()) {
+        const inputDataSlice = input.slice(f32).?;
+        const predictedIndices = y_indices.slice(usize).?;
+        const labels = iterator.getLabels() orelse continue;
 
-    var iter = evaluation_dataset.iterator();
+        iterator.copyImageData(inputDataSlice);
 
-    const stack_alloc = blk: {
-        var buf: [4096]u8 = undefined;
-        var fba = std.heap.FixedBufferAllocator.init(&buf);
-        break :blk fba.allocator();
-    };
+        // perform forward pass
+        try plan.forward();
 
-    // tensors labels from output
-    var out_labels = try Tensor(usize).init(.{ net.outputShape().@"0", 0, 1 }, stack_alloc);
-    var expected_labels = try Tensor(usize).init(.{ net.outputShape().@"0", 0, 1 }, stack_alloc);
-
-    while (try iter.nextBatchEval(device)) |data| {
-        const inputs, const labels = data;
-
-        const result = try net.forward(device, inputs);
-        brainz.ops.argmax(f32, result, 1, &out_labels); //argmax the guessed labels
-
-        try brainz.ops.cast(u8, usize, device, &labels, &expected_labels);
-        try device.barrier();
-
-        try brainz.ops.elementWiseEq(usize, device, &out_labels, &expected_labels, &expected_labels);
-        try device.barrier();
-
-        num_correct += brainz.ops.sum(usize, &expected_labels);
+        // compute model accuracy on MNIST test dataset
+        for (labels, 0..) |label, idx| {
+            if (predictedIndices[idx] == label) {
+                correct_predictions += 1;
+            }
+            total_predictions += 1;
+        }
     }
-
-    return @as(f32, @as(f32, @floatFromInt(num_correct)) / @as(f32, @floatFromInt(total_batches)));
+    return @as(f32, @floatFromInt(correct_predictions)) / @as(f32, @floatFromInt(total_predictions));
 }

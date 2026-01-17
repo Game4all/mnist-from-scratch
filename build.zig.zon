@@ -5,8 +5,8 @@
     .version = "0.2.0",
     .dependencies = .{
         .brainz = .{
-            .url = "git+https://github.com/Game4all/brainz#7afc0dd6053f678245deb7c22fadc49636cc78b2",
-            .hash = "brainz-0.0.0-_0AKevl-AQCESJ33R-WTTQNAdB9HjhAt_KFe6I0lCHp_",
+            .url = "git+https://github.com/Game4all/brainz#09741668e2292f61871eeca0cfd37263b5d479a3",
+            .hash = "brainz-0.0.0-_0AKenPLAQDdzx1fD4FYf97cf58IAdWNI88DYfZEaK7X",
         },
     },
     .paths = .{

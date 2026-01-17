@@ -4,145 +4,148 @@
 const std = @import("std");
 const brainz = @import("brainz");
 
-const Tensor = brainz.Tensor;
 const Allocator = std.mem.Allocator;
-const Device = brainz.Device;
 
-/// MNIST dataset
+/// A reader for the MNIST Handwritten digits dataset.
 pub const MNISTDataset = struct {
     alloc: Allocator,
 
-    /// dataset itself.
-    label_data: []u8,
-    image_data: []u8,
+    /// labels
+    label_data: []usize,
+    /// raw image data
+    image_data: []f32,
+    /// total number of images in the split
+    count_images: usize,
 
-    batch_size: usize,
-
-    // tensors
-    f_inputs: Tensor(f32),
-    label_encoded_tensor: Tensor(f32),
-
+    /// The size of an image
     pub const IMAGE_SIZE: comptime_int = 784;
+    pub const MAX_LABEL_TYPES = 10; // 0 to 9
 
     const Self = @This();
 
-    pub fn init(alloc: Allocator, labels_path: [:0]const u8, images_path: [:0]const u8, network: anytype) !@This() {
-        const labels = try load(alloc, labels_path);
-        errdefer alloc.free(labels);
+    /// Loads a split of the dataset from disk from the given labels and images path.
+    pub fn init(alloc: Allocator, labels_path: [:0]const u8, images_path: [:0]const u8) !@This() {
+        // ensuring the files are accessible
+        try std.fs.cwd().access(labels_path, .{ .mode = .read_only });
+        try std.fs.cwd().access(images_path, .{ .mode = .read_only });
 
-        const images = try load(alloc, images_path);
-        errdefer alloc.free(images);
+        // load both labels and image data from disk
+        const labels_u8 = try load(alloc, labels_path);
+        defer alloc.free(labels_u8);
+
+        const images_u8 = try load(alloc, images_path);
+        defer alloc.free(images_u8);
+
+        const label_data = try alloc.alloc(usize, labels_u8.len);
+        errdefer alloc.free(label_data);
+
+        for (labels_u8, 0..) |label, i|
+            label_data[i] = @as(usize, label);
+
+        const image_data = try alloc.alloc(f32, images_u8.len);
+        errdefer alloc.free(image_data);
+        for (images_u8, 0..) |pixel, i|
+            image_data[i] = @as(f32, @floatFromInt(pixel)) / 255.0;
+
+        const image_count = image_data.len / Self.IMAGE_SIZE;
+
+        std.debug.assert(image_count == label_data.len);
 
         return @This(){
             .alloc = alloc,
-            .image_data = images,
-            .batch_size = network.inputShape().@"0",
-            .label_data = labels,
-            .label_encoded_tensor = try Tensor(f32).init(network.outputShape(), alloc),
-            .f_inputs = try Tensor(f32).init(network.inputShape(), alloc),
+            .label_data = label_data,
+            .image_data = image_data,
+            .count_images = image_count,
         };
     }
 
-    pub fn deinit(self: *@This()) void {
+    pub fn deinit(self: *Self) void {
         self.alloc.free(self.image_data);
         self.alloc.free(self.label_data);
-
-        self.label_encoded_tensor.deinit(self.alloc);
-        self.f_inputs.deinit(self.alloc);
     }
 
     fn load(alloc: Allocator, path: [:0]const u8) ![]u8 {
-        var file = try std.fs.cwd().openFile(path, .{});
-        var reader = file.reader();
+        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_only });
         defer file.close();
 
-        _ = try reader.readInt(u16, .big); // magic bytes
-        const ty = try reader.readInt(u8, .big);
+        var buffer: [1024]u8 = undefined;
+        var fileReader = file.reader(&buffer);
+        var reader = &fileReader.interface;
 
-        const data_type: usize = switch (ty) {
-            0x08 => @sizeOf(u8),
-            0x09 => @sizeOf(i8),
-            0x0B => @sizeOf(i16),
-            0x0C => @sizeOf(i32),
-            0x0D => @sizeOf(f32),
-            0x0E => @sizeOf(f64),
-            else => return error.InvalidDataFormat,
-        };
+        // tossing header magic bytes
+        const headerMagic = try reader.peekInt(u16, .big);
+        reader.toss(@sizeOf(u16));
 
-        const n_dims = try reader.readInt(u8, .big); // numbers of dimensions
+        if (headerMagic != 0) return error.HeaderCheckFailed;
 
-        var total_size: usize = 1;
-        for (0..n_dims) |_| // reading dimensions
-            total_size *= try reader.readInt(u32, .big);
+        // reading the data format (0x08 = unsigned byte)
+        const dataType = try reader.peekInt(u8, .big);
+        reader.toss(@sizeOf(u8));
 
-        total_size *= data_type;
+        if (dataType != 0x08) return error.UnsupportedDataType;
 
-        const data = try alloc.alloc(u8, total_size);
-        errdefer alloc.free(data);
+        const nDims = try reader.peekInt(u8, .big);
+        reader.toss(@sizeOf(u8));
 
-        _ = try reader.read(data);
+        var totalSize: usize = 1;
+        for (0..nDims) |_| {
+            totalSize *= try reader.peekInt(u32, .big);
+            reader.toss(@sizeOf(u32));
+        }
+
+        const data = try reader.readAlloc(alloc, totalSize);
+
         return data;
     }
 
-    pub inline fn iterator(self: *@This()) BatchIterator {
-        return .{
-            .pos = 0,
-            .ptr = self,
-        };
-    }
+    pub const Iterator = struct {
+        dataset: *const MNISTDataset,
+        batch_size: usize,
+        pos: usize = 0,
 
-    const BatchIterator = struct {
-        pos: usize,
-        ptr: *Self,
-
-        pub fn nextBatchTraining(self: *@This(), dev: Device) !?struct { *const Tensor(f32), *const Tensor(f32) } {
-            if (self.pos < self.ptr.image_data.len) {
-                // preprocess and load the inputs
-                const inputU = try Tensor(u8).initFromSlice(self.ptr.f_inputs.shape, self.ptr.image_data[self.pos..(self.pos + IMAGE_SIZE * self.ptr.batch_size)]);
-
-                try brainz.ops.cast(u8, f32, dev, &inputU, &self.ptr.f_inputs);
-                try dev.barrier();
-
-                try brainz.ops.mulScalar(f32, dev, &self.ptr.f_inputs, 1.0 / 256.0, &self.ptr.f_inputs);
-                try dev.barrier();
-
-                // one hot encoding
-                encodeOneHot(f32, self.ptr.label_data[(self.pos / IMAGE_SIZE)..((self.pos / IMAGE_SIZE) + self.ptr.batch_size)], &self.ptr.label_encoded_tensor);
-
-                self.pos += IMAGE_SIZE * self.ptr.batch_size;
-
-                return .{ &self.ptr.f_inputs, &self.ptr.label_encoded_tensor };
-            }
-
-            return null;
+        /// Copies the image data to the specified slice.
+        pub fn copyImageData(self: *const Iterator, dest: []f32) void {
+            std.debug.assert(dest.len == self.batch_size * MNISTDataset.IMAGE_SIZE);
+            if (self.pos >= self.dataset.label_data.len) return;
+            const end = @min(self.pos + self.batch_size, self.dataset.label_data.len);
+            const images = self.dataset.image_data[self.pos * IMAGE_SIZE .. end * IMAGE_SIZE];
+            @memcpy(dest, images);
         }
 
-        pub fn nextBatchEval(self: *@This(), dev: Device) !?struct { *const Tensor(f32), Tensor(u8) } {
-            if (self.pos < self.ptr.image_data.len) {
-                // preprocess and load the inputs
-                const inputU = try Tensor(u8).initFromSlice(self.ptr.f_inputs.shape, self.ptr.image_data[self.pos..(self.pos + IMAGE_SIZE * self.ptr.batch_size)]);
-                try brainz.ops.cast(u8, f32, dev, &inputU, &self.ptr.f_inputs);
-                try dev.barrier();
+        /// Returns the labels for the current iteration.
+        pub fn getLabels(self: *const Iterator) ?[]const usize {
+            if (self.pos >= self.dataset.label_data.len) return null;
+            const end = @min(self.pos + self.batch_size, self.dataset.label_data.len);
+            const labels = self.dataset.label_data[self.pos..end];
+            return labels;
+        }
 
-                try brainz.ops.mulScalar(f32, dev, &self.ptr.f_inputs, 1.0 / 256.0, &self.ptr.f_inputs);
-                try dev.barrier();
+        /// Copies the one hot encoded label data to the specified slice.
+        pub fn copyLabelData(self: *const Iterator, dest: []f32) void {
+            std.debug.assert(dest.len == self.batch_size * MNISTDataset.MAX_LABEL_TYPES);
+            const labelData = self.getLabels() orelse return;
+            @memset(dest, 0);
+            for (labelData, 0..) |label, idx|
+                dest[idx * MNISTDataset.MAX_LABEL_TYPES + label] = 1.0;
+        }
 
-                const labels = try Tensor(u8).initFromSlice(.{ self.ptr.batch_size, 0, 1 }, self.ptr.label_data[(self.pos / IMAGE_SIZE)..((self.pos / IMAGE_SIZE) + self.ptr.batch_size)]);
+        pub fn next(self: *Iterator) bool {
+            if (self.pos >= self.dataset.label_data.len) return false;
 
-                self.pos += IMAGE_SIZE * self.ptr.batch_size;
+            const end = @min(self.pos + self.batch_size, self.dataset.label_data.len);
+            const actual_batch_size = end - self.pos;
 
-                return .{ &self.ptr.f_inputs, labels };
-            }
+            self.pos += actual_batch_size;
 
-            return null;
+            return true;
         }
     };
+
+    /// Returns a dataset iterator with the given batch size.
+    pub fn iterator(self: *const Self, batch_size: usize) Iterator {
+        return .{
+            .dataset = self,
+            .batch_size = batch_size,
+        };
+    }
 };
-
-fn encodeOneHot(comptime ty: type, indices: []const u8, result: *Tensor(ty)) void {
-    std.debug.assert(indices.len == result.shape.@"0");
-    result.fill(0);
-
-    for (indices, 0..) |value, i|
-        result.set(.{ i, value, 0 }, 1);
-}
