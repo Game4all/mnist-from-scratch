@@ -18,7 +18,7 @@ const MNISTClassifierNet = brainz.nn.Sequential(MNISTClassifier);
 
 const BATCH_SIZE: usize = 32;
 const BASE_LEARNING_RATE: f32 = 0.1;
-const NUM_EPOCHS: usize = 5;
+const NUM_EPOCHS: usize = 15;
 
 pub fn main() !void {
     // getting handle to stdout
@@ -116,7 +116,7 @@ pub fn main() !void {
         try stdout.flush();
 
         var writeBuffer: [1024]u8 = undefined;
-        var weightsFile = try std.fs.cwd().openFile("src/model.bin", .{ .mode = .write_only });
+        var weightsFile = try std.fs.cwd().createFile("src/model.bin", .{});
         var weightWriter = weightsFile.writer(&writeBuffer);
         const weightWriterIo = &weightWriter.interface;
 
