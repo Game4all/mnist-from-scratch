@@ -11,17 +11,16 @@
 
 ## Getting it up running
 
-This requires Zig **0.13.0** to work.
+This requires Zig **0.15.2** to work.
 
 1. Clone the git repository
 2. Download and extract the MNIST dataset into the repository root.
-2. Run `zig build`
+2. Run `zig build`. That will trigger a model train locally ()
 3. Deployable WASM + HTML file are at `zig-out/web/public`
 
 ## Training the model locally
 
-You can train the model locally by running `zig build train`. By default the training will use the model checkpoints in `src/model.bin`. You can start from scratch by deleting the checkpoints and running the command again.
-
+You can train the model locally by running `zig build train`.
 
 ## License and acknowledgements
 
