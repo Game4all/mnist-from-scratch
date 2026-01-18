@@ -78,9 +78,9 @@ pub fn main() !void {
         var iterator = trainDataset.iterator(BATCH_SIZE);
         var batchNum: usize = 0;
 
+        const labelDataSlice = targets.slice(f32).?;
+        const inputDataSlice = inputs.slice(f32).?;
         while (iterator.next()) {
-            const labelDataSlice = targets.slice(f32).?;
-            const inputDataSlice = inputs.slice(f32).?;
 
             // memset label data to zero then OHE encode it
             iterator.copyLabelData(labelDataSlice);
