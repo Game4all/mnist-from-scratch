@@ -80,7 +80,7 @@ function centerAndCropImage() {
 /// Draws the logit index on top of the distribution
 function drawLogitNumbers() {
     resultCanvasCtx.clearRect(0, 0, resultCanvas.width, resultCanvas.height);
-    const barWidth = resultCanvas.width / 10 - 10;
+    const barWidth = resultCanvas.width / 10 - 10;  
     resultCanvasCtx.font = "12px arial";
     for (let i = 0; i < 10; i++) {
         const text = i.toString();
@@ -125,7 +125,9 @@ function guess() {
 
 
 const model = await WebAssembly.instantiateStreaming(fetch("webmnist.wasm"));
-console.log("Model initialization returned : " + (model.instance.exports.init() != 0 ? "an error" : "OK"));
+const initResult = model.instance.exports.init();
+
+console.log("Model initialization returned : " + (initResult != 0 ? `an error (${initResult}) ` : "OK"));
 
 drawLogitNumbers();
 
