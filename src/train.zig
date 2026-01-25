@@ -18,13 +18,20 @@ const MNISTClassifierNet = brainz.nn.Sequential(MNISTClassifier);
 
 const BATCH_SIZE: usize = 32;
 const BASE_LEARNING_RATE: f32 = 0.1;
-const NUM_EPOCHS: usize = 15;
+const NUM_EPOCHS: usize = 50;
+
+pub fn getLrSchedule(epoch: usize) f32 {
+    return if (epoch <= NUM_EPOCHS / 2) BASE_LEARNING_RATE else BASE_LEARNING_RATE / 2;
+}
 
 pub fn main() !void {
-    // getting handle to stdout
-    var stdoutBuffer: [1024]u8 = undefined;
-    var stdoutWriter = std.fs.File.stdout().writer(&stdoutBuffer);
-    const stdout = &stdoutWriter.interface;
+    const stdout = blk: {
+        // getting handle to stdout
+        var stdoutBuffer: [1024]u8 = undefined;
+        var stdoutWriter = std.fs.File.stdout().writer(&stdoutBuffer);
+        const stdout = &stdoutWriter.interface;
+        break :blk stdout;
+    };
 
     // setup gpa for training
     var gpa: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
@@ -97,6 +104,7 @@ pub fn main() !void {
             try plan.backward(); // perform back prop
 
             // optimize
+            sgd.lr = getLrSchedule(epoch);
             sgd.step();
 
             if (batchNum % 100 == 0) {
@@ -115,10 +123,15 @@ pub fn main() !void {
         try stdout.print("Saving model to disk", .{});
         try stdout.flush();
 
-        var writeBuffer: [1024]u8 = undefined;
         var weightsFile = try std.fs.cwd().createFile("src/model.bin", .{});
-        var weightWriter = weightsFile.writer(&writeBuffer);
-        const weightWriterIo = &weightWriter.interface;
+        defer weightsFile.close();
+
+        const weightWriterIo = blk: {
+            var writeBuffer: [1024]u8 = undefined;
+            var weightWriter = weightsFile.writer(&writeBuffer);
+            const weightWriterIo = &weightWriter.interface;
+            break :blk weightWriterIo;
+        };
 
         try network.getInner().saveWeights(weightWriterIo);
 

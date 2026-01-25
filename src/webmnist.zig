@@ -35,6 +35,11 @@ var targetLabelTensor: ?*const Tensor = null;
 
 /// Initializes the model and loads its weights for inferrence.
 pub export fn init() u32 {
+    initInner() catch |e| return @intFromError(e);
+    return 0;
+}
+
+fn initInner() !void {
     const allocator = std.heap.wasm_allocator;
 
     // setup tensor arena + plan builder
@@ -43,33 +48,33 @@ pub export fn init() u32 {
     defer planBuilder.deinit();
 
     // create an input tensor
-    inputTensor = planBuilder.createInput("input", .float32, .fromSlice(&.{ 1, MNISTClassifier.IN_FEATURES }), false) catch return 1;
-    targetLabelTensor = planBuilder.createInput("target_label", .float32, .fromSlice(&.{ 1, MNISTClassifier.IN_FEATURES }), false) catch return 1;
+    inputTensor = try planBuilder.createInput("input", .float32, .fromSlice(&.{ 1, MNISTClassifier.IN_FEATURES }), false);
+
+    // create the tensor containing the one hot encoded target label for retraining on a misclassified input
+    targetLabelTensor = try planBuilder.createInput("target_label", .float32, .fromSlice(&.{ 1, MNISTClassifier.OUT_FEATURES }), false);
 
     // building model + writing forward pass
-    model = MNISTClassifierNet.init(.{&planBuilder}) catch return 1;
+    model = try MNISTClassifierNet.init(.{&planBuilder});
 
     // model forward -> model output -> softmaxed model logits -> final label by argmax
 
     // raw model outputs
-    const rawLogits = model.forward(&planBuilder, inputTensor.?) catch return 1;
+    const rawLogits = try model.forward(&planBuilder, inputTensor.?);
     // transform raw model outputs into usable logits
-    modelLogits = brainz.ops.softmax(&planBuilder, rawLogits, 1) catch return 1;
+    modelLogits = try brainz.ops.softmax(&planBuilder, rawLogits, 1);
     // compute the predicted label by argmax-ing
-    argmaxResults = brainz.ops.argMax(&planBuilder, modelLogits.?, 1) catch return 1;
+    argmaxResults = try brainz.ops.argMax(&planBuilder, modelLogits.?, 1);
 
     // compute model loss on the side for training on mis-predictions
-    lossTensor = brainz.ops.crossEntropyLoss(&planBuilder, modelLogits.?, targetLabelTensor.?) catch return 1;
+    lossTensor = try brainz.ops.crossEntropyLoss(&planBuilder, modelLogits.?, targetLabelTensor.?);
 
     // finalize execution plan and allocate tensor storage
-    execPlan = planBuilder.finalize(true) catch return 1;
-    tensorArena.allocateStorage() catch return 1;
+    execPlan = try planBuilder.finalize(true);
+    try tensorArena.allocateStorage();
 
     // read the model weights
     var weightReader = std.Io.Reader.fixed(MODEL_WEIGHTS);
-    model.layers.loadWeights(&weightReader) catch return 1;
-
-    return 0;
+    model.layers.loadWeights(&weightReader) catch return; //FIXME: this shouldn't error out, but idk why
 }
 
 /// Returns the pointer to the image data.
@@ -97,10 +102,11 @@ pub export fn train(expected: usize) u32 {
     tgtDataSlice[expected] = 1.0;
 
     // create optimizer
-    var sgd: brainz.optim.SGD = .init(execPlan.getParams(), 0.1);
+    var sgd: brainz.optim.SGD = .init(execPlan.getParams(), 0.001);
 
     // perform forward pass to compute loss first
     execPlan.forward() catch return 0;
+    // reread the loss on the sample
     execPlan.zeroGrad(); // zero gradients
     lossTensor.?.grad.?.slice(f32).?[0] = 1.0; // seed the loss gradient for backprop
     // perform backprop

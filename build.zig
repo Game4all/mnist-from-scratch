@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) void {
     const train_module = b.addModule("train_module", .{
         .root_source_file = b.path("src/train.zig"),
         .target = target,
-        .optimize = .ReleaseFast,
+        .optimize = optimize,
     });
 
     const train_executable = b.addExecutable(.{
